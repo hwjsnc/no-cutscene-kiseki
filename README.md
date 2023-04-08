@@ -22,7 +22,7 @@ Usage
 - If the game folder hasn't been detected automatically, select it yourself.
 - Click either "Launch Game" or "Launch Game & Exit"
 
-If your game is installed to a nonstandard location, you can copy the mod .exe to that location and it should automatically recognize the game automatically.
+If your game is installed to a nonstandard location, you can copy the mod .exe to that location and it should recognize the game automatically.
 
 Credits
 -------

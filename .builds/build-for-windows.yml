@@ -1,6 +1,7 @@
 image: archlinux
 packages:
-  - mingw-w64
+  - mingw-w64-headers
+  - mingw-w64-gcc
   - rustup
 sources:
   - https://git.sr.ht/~quf/no-cutscene-kiseki
@@ -13,5 +14,5 @@ tasks:
     #rustup toolchain install --force-non-host stable-x86_64-pc-windows-gnu
     rustup target add x86_64-pc-windows-gnu
  - build: |
-    cd no-cutscene-kiseki/tbled
+    cd no-cutscene-kiseki
     cargo build --release --target x86_64-pc-windows-gnu
