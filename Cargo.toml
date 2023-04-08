@@ -1,0 +1,32 @@
+[package]
+name = "no-cutscene-kiseki"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "common"
+path = "src/lib.rs"
+
+[[bin]]
+name = "patch-running"
+
+[[bin]]
+name = "launch"
+
+[profile.release]
+# runtime performance is basically irrelevant, so we optimize for binary size as far as possible.
+opt-level = "z"
+lto = true
+strip = true
+
+[dependencies]
+atty = { git = "https://github.com/softprops/atty.git", rev = "6633c0e1446aa19e6cd00e00e39770da43081bda" }
+anyhow = "1.0.70"
+blake2 = "0.10.5"
+fltk = "1.4.0"
+generic-array = "0.14.7"
+hex-literal = "0.3.4"
+process-memory = "0.5.0"
+sysinfo = "0.28.4"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
