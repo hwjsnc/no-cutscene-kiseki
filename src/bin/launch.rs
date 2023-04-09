@@ -24,13 +24,16 @@ fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
 }
 
 fn find_install_folder() -> Option<InstallFolder> {
-    let folders = [
-        "C:\\GOG Games\\ToCS3",
-        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
-        ".",
+    let devices = ["A:\\", "B:\\", "C:\\", "D:\\", "E:\\", "F:\\", "G:\\", "H:\\"]; // TODO: GetLogicalDrives (fileapi.h)
+    let paths = [
+        "GOG Games\\ToCS3",
+        "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
+        "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
     ];
-    for s in folders {
-        let dir = std::path::PathBuf::from(s);
+    let absolute_folders = devices.iter().map(|dev| paths.map(|path| std::path::Path::new(dev).join(path))).flatten();
+    let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
+    let all_folders = relative_folders.chain(absolute_folders);
+    for dir in all_folders {
         let exe = dir.join("bin/x64/ed8_3_PC.exe");
         let i = InstallFolder { dir, exe };
         if install_folder_seems_valid(&i) {
