@@ -130,13 +130,13 @@ fn main() {
                 match (&installation).as_ref() {
                     Some(InstallFolder { dir: _, exe }) => {
                         let child = std::process::Command::new(exe).spawn().with_context(|| format!("couldn't launch {}", exe.display()));
+                        // wait 10 ms for the game to start up
+                        std::thread::sleep(std::time::Duration::from_millis(10));
                         let patch_result = child
-                            .and_then(|c| process_memory::Pid::try_from(c.id()).map_err(anyhow::Error::msg))
-                            .and_then(|pid| pid.try_into_process_handle().map_err(anyhow::Error::msg))
+                            .and_then(|c| c.try_into_process_handle().map_err(anyhow::Error::msg))
                             .context("couldn't get game process handle")
                             .and_then(|handle| try_patch(&handle))
                             .context("couldn't apply patch to autoskip cutscenes");
-                        // wait 100 ms for the game to start up
                         match patch_result {
                             Ok(()) => {} // done; TODO: exit if checkbox is checked
                             Err(err) => {
