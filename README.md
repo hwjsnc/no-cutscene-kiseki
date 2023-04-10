@@ -27,7 +27,12 @@ If your game is installed to a nonstandard location, you can copy the mod .exe t
 Credits
 -------
 
-Thanks to Twn and Kyuuhachi for help with reverse engineering and AdmiralCurtiss for [SenPatcher](https://github.com/AdmiralCurtiss/SenPatcher) which was useful for cross-referencing.
+Thanks to:
+
+- Fontaino for testing
+- ⠋Sewer56⣠ for help with the win32 API
+- Twn and Kyuuhachi for help with reverse engineering
+- AdmiralCurtiss for [SenPatcher](https://github.com/AdmiralCurtiss/SenPatcher) which was useful for cross-referencing.
 
 Releases
 --------

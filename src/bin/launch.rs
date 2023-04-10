@@ -53,6 +53,70 @@ fn find_install_folder() -> Option<InstallFolder> {
     None
 }
 
+unsafe fn query_memory(handle: windows::Win32::Foundation::HANDLE, address: Option<*const core::ffi::c_void>) -> Result<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION, std::io::Error> {
+    let mut mem_info = windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION::default();
+    let ret = windows::Win32::System::Memory::VirtualQueryEx(
+        windows::Win32::Foundation::HANDLE(handle.0 as isize),
+        address,
+        std::ptr::addr_of_mut!(mem_info),
+        std::mem::size_of::<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION>(),
+    );
+    if ret == std::mem::size_of::<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION>() {
+        Ok(mem_info)
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+unsafe fn change_memory_protect(
+    handle: windows::Win32::Foundation::HANDLE,
+    address: *const core::ffi::c_void,
+    size: usize,
+    new_flags: windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS,
+) -> Result<windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS, std::io::Error> {
+    let mut old_flags = windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS::default();
+    let ret = windows::Win32::System::Memory::VirtualProtectEx(handle, address, size, new_flags, std::ptr::addr_of_mut!(old_flags));
+    if ret.0 != 0 {
+        Ok(old_flags)
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+fn launch_and_patch_game(exe: &std::path::Path) -> anyhow::Result<()> {
+    let child = std::process::Command::new(exe).spawn().with_context(|| format!("couldn't launch {}", exe.display()))?;
+
+    // wait 10 ms for the game to start up
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    // get handle
+    let handle = process_memory::Pid::try_from(child.id())
+        .map_err(anyhow::Error::msg)
+        .and_then(|pid| pid.try_into_process_handle().map_err(anyhow::Error::msg))
+        .context("couldn't get game process handle")?;
+
+    let text_segment_offset = 0x140001000usize;
+    let mem_info = unsafe { query_memory(windows::Win32::Foundation::HANDLE(handle.0 as isize), Some(text_segment_offset as *const core::ffi::c_void)).context("querying process memory pages")? };
+
+    if mem_info.BaseAddress as usize + mem_info.RegionSize < 0x1403dfda3 {
+        return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
+    }
+
+    let rwx = windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS(0x40);
+    let oldflags = unsafe {
+        change_memory_protect(windows::Win32::Foundation::HANDLE(handle.0 as isize), mem_info.BaseAddress, mem_info.RegionSize, rwx).context("couldn't change memory protect flags to allow rwx")?
+    };
+
+    try_patch(&handle).context("couldn't apply patch to autoskip cutscenes")?;
+
+    let _ = unsafe {
+        change_memory_protect(windows::Win32::Foundation::HANDLE(handle.0 as isize), mem_info.BaseAddress, mem_info.RegionSize, oldflags)
+            .context("couldn't change memory protect flags back to old value after patching")?
+    };
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Msg {
     FolderSelect,
@@ -136,34 +200,23 @@ fn main() {
                     }
                 }
             }
-            Some(Msg::LaunchGame { exit_after }) => {
-                match (&installation).as_ref() {
-                    Some(InstallFolder { dir: _, exe }) => {
-                        let child = std::process::Command::new(exe).spawn().with_context(|| format!("couldn't launch {}", exe.display()));
-                        // wait 10 ms for the game to start up
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                        let patch_result = child
-                            .and_then(|c| process_memory::Pid::try_from(c.id()).map_err(anyhow::Error::msg))
-                            .and_then(|pid| pid.try_into_process_handle().map_err(anyhow::Error::msg))
-                            .context("couldn't get game process handle")
-                            .and_then(|handle| try_patch(&handle))
-                            .context("couldn't apply patch to autoskip cutscenes");
-                        match patch_result {
-                            Ok(()) => {} // done; TODO: exit if checkbox is checked
-                            Err(err) => {
-                                fltk::dialog::alert_default(&format!("Error:\n{:?}", err));
-                                continue;
-                            }
-                        }
-                        if exit_after {
-                            return;
+            Some(Msg::LaunchGame { exit_after }) => match (&installation).as_ref() {
+                Some(InstallFolder { dir: _, exe }) => {
+                    match launch_and_patch_game(&exe) {
+                        Ok(()) => {}
+                        Err(err) => {
+                            fltk::dialog::alert_default(&format!("Error:\n{:?}", err));
+                            continue;
                         }
                     }
-                    None => {
-                        unreachable!("button should be disable before valid game path is given");
+                    if exit_after {
+                        return;
                     }
                 }
-            }
+                None => {
+                    unreachable!("button should be disable before valid game path is given");
+                }
+            },
         }
     }
 }
