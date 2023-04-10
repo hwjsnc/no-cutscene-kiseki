@@ -56,7 +56,7 @@ fn find_install_folder() -> Option<InstallFolder> {
 unsafe fn query_memory(handle: windows::Win32::Foundation::HANDLE, address: Option<*const core::ffi::c_void>) -> Result<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION, std::io::Error> {
     let mut mem_info = windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION::default();
     let ret = windows::Win32::System::Memory::VirtualQueryEx(
-        windows::Win32::Foundation::HANDLE(handle.0 as isize),
+        handle,
         address,
         std::ptr::addr_of_mut!(mem_info),
         std::mem::size_of::<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION>(),
@@ -90,29 +90,40 @@ fn launch_and_patch_game(exe: &std::path::Path) -> anyhow::Result<()> {
     std::thread::sleep(std::time::Duration::from_millis(10));
 
     // get handle
-    let handle = process_memory::Pid::try_from(child.id())
+    let pm_handle = process_memory::Pid::try_from(child.id())
         .map_err(anyhow::Error::msg)
         .and_then(|pid| pid.try_into_process_handle().map_err(anyhow::Error::msg))
-        .context("couldn't get game process handle")?;
+        .context("couldn't get game process handle for process-memory")?;
 
+    // get handle for VirtualQueryEx - could probably use the same if not for api version differences
+    let handle = unsafe {
+        windows::Win32::System::Threading::OpenProcess(
+            windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION
+                | windows::Win32::System::Threading::PROCESS_VM_OPERATION
+                | windows::Win32::System::Threading::PROCESS_VM_READ
+                | windows::Win32::System::Threading::PROCESS_VM_WRITE,
+            false,
+            child.id(),
+        )
+        .context("couldn't get game process handle for changing memory protect")?
+    };
+
+    // query text segment and change memory protection to rwx
     let text_segment_offset = 0x140001000usize;
-    let mem_info = unsafe { query_memory(windows::Win32::Foundation::HANDLE(handle.0 as isize), Some(text_segment_offset as *const core::ffi::c_void)).context("querying process memory pages")? };
+    let mem_info = unsafe { query_memory(handle, Some(text_segment_offset as *const core::ffi::c_void)).context("querying process memory pages")? };
 
     if mem_info.BaseAddress as usize + mem_info.RegionSize < 0x1403dfda3 {
         return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
     }
 
     let rwx = windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS(0x40);
-    let oldflags = unsafe {
-        change_memory_protect(windows::Win32::Foundation::HANDLE(handle.0 as isize), mem_info.BaseAddress, mem_info.RegionSize, rwx).context("couldn't change memory protect flags to allow rwx")?
-    };
+    let oldflags = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, rwx).context("couldn't change memory protect flags to allow rwx")? };
 
-    try_patch(&handle).context("couldn't apply patch to autoskip cutscenes")?;
+    // try patching game memory
+    try_patch(&pm_handle).context("couldn't apply patch to autoskip cutscenes")?;
 
-    let _ = unsafe {
-        change_memory_protect(windows::Win32::Foundation::HANDLE(handle.0 as isize), mem_info.BaseAddress, mem_info.RegionSize, oldflags)
-            .context("couldn't change memory protect flags back to old value after patching")?
-    };
+    // change memory protection back to original value
+    let _ = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, oldflags).context("couldn't change memory protect flags back to old value after patching")? };
 
     Ok(())
 }
