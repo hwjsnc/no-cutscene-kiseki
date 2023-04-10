@@ -24,13 +24,23 @@ fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
 }
 
 fn find_install_folder() -> Option<InstallFolder> {
-    let devices = ["A:\\", "B:\\", "C:\\", "D:\\", "E:\\", "F:\\", "G:\\", "H:\\"]; // TODO: GetLogicalDrives (fileapi.h)
+    let mut drvs = unsafe { windows::Win32::Storage::FileSystem::GetLogicalDrives() };
+    if drvs == 0 {
+        // 0 means Error
+        drvs = 4; // 3rd-most significant bit is set, corresponds to drive C
+    }
+    let drives = ('A'..='Z').filter(|drv| drvs & (1 << (*drv as u32 - 'A' as u32)) != 0);
     let paths = [
         "GOG Games\\ToCS3",
         "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
         "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
     ];
-    let absolute_folders = devices.iter().map(|dev| paths.map(|path| std::path::Path::new(dev).join(path))).flatten();
+    let absolute_folders = drives
+        .map(|drv| {
+            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
+            paths.map(|path| drv.join(path))
+        })
+        .flatten();
     let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
     let all_folders = relative_folders.chain(absolute_folders);
     for dir in all_folders {
