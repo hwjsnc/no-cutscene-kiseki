@@ -14,10 +14,7 @@ pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(data: T) -> bool {
 }
 
 pub fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
-    installation.dir.is_dir()
-        && std::fs::read(&installation.exe)
-            .map(exe_hash_matches_1_05) // might be too strong of a check
-            .unwrap_or(false)
+    installation.dir.is_dir() && installation.exe.is_file()
 }
 
 pub fn find_install_folder() -> Option<InstallFolder> {
@@ -35,7 +32,7 @@ pub fn find_install_folder() -> Option<InstallFolder> {
     let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
     let all_folders = relative_folders.chain(absolute_folders);
     for dir in all_folders {
-        let exe = dir.join("bin/x64/ed8_3_PC.exe");
+        let exe = dir.join("bin\\x64\\ed8_3_PC.exe");
         let i = InstallFolder { dir, exe };
         if install_folder_seems_valid(&i) {
             return Some(i);
@@ -65,7 +62,7 @@ unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
     }
 }
 
-pub unsafe fn try_patch(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
+pub unsafe fn apply_patches(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
     // check game version
     apply_patch(handle, "game version", 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into()))?;
 
@@ -93,4 +90,92 @@ pub unsafe fn try_patch(handle: windows::Win32::Foundation::HANDLE) -> anyhow::R
     apply_patch(handle, "set cutscene skip flag to 1", 0x1416c535d, (&[0x00]).into(), Some((&[0x01]).into()))?;
 
     anyhow::Ok(())
+}
+
+// This struct represents the suspended game process
+// It implements drop to automatically close the game when an error occurs.
+// If the game patch process was successful, call .resume() to resume the game and close internal handles.
+struct SuspendedGameProcess {
+    proc_info: windows::Win32::System::Threading::PROCESS_INFORMATION,
+    resumed: bool,
+}
+
+impl SuspendedGameProcess {
+    pub unsafe fn new(exe_path: &std::path::Path) -> std::io::Result<Self> {
+        // we take startup info from the current process
+        let startup_info = windows::Win32::System::Threading::STARTUPINFOW::default();
+        //windows::Win32::System::Threading::GetStartupInfoW(std::ptr::addr_of_mut!(startup_info));
+        let name = windows::core::HSTRING::from(exe_path);
+
+        let proc_info = win::create_process_w(
+            windows::core::PCWSTR(name.as_ptr()),   // name
+            windows::core::PWSTR(0 as *mut u16),    // command_line
+            None,                                   // process security attributes
+            None,                                   // thread security attributes
+            false,                                  // inherit handles?
+            win::CREATE_SUSPENDED,                  // creation flags
+            None,                                   // environment
+            windows::core::PCWSTR(0 as *const u16), // working directory
+            &startup_info,
+        )?;
+
+        Ok(Self { proc_info, resumed: false })
+    }
+
+    pub fn process_handle(&self) -> windows::Win32::Foundation::HANDLE {
+        self.proc_info.hProcess
+    }
+
+    pub unsafe fn resume(&mut self) -> std::io::Result<u32> {
+        let ret = win::resume_thread(self.proc_info.hThread)?;
+        self.resumed = true;
+        Ok(ret)
+    }
+}
+
+impl Drop for SuspendedGameProcess {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.resumed {
+                _ = win::terminate_process(self.process_handle(), 1);
+            }
+            _ = win::close_handle(self.proc_info.hProcess);
+            _ = win::close_handle(self.proc_info.hThread);
+        }
+    }
+}
+
+pub fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
+    // Check that we got the right exe
+    let exe_data = std::fs::read(exe_path).context("couldn't check exe data")?;
+    if !exe_hash_matches_1_05(&exe_data) {
+        return Err(anyhow::Error::msg("Unexpected executable. Are you sure this is the right version?"));
+    }
+
+    unsafe {
+        let mut game = SuspendedGameProcess::new(exe_path).context("couldn't launch suspended game process")?;
+
+        // Obtain information about the text segment pages
+        let text_segment_offset = 0x140001000usize;
+        let mem_info = win::virtual_query_ex(game.process_handle(), Some(text_segment_offset as *const core::ffi::c_void)).context("couldn't query process memory pages")?;
+        if mem_info.BaseAddress as usize + mem_info.RegionSize < 0x1403dfda3 {
+            // Are our addresses of interest part of the page region?
+            return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
+        }
+
+        // Change memory protection flags
+        let rw = win::PAGE_READWRITE;
+        let oldflags = win::virtual_protect_ex(game.process_handle(), mem_info.BaseAddress, mem_info.RegionSize, rw).context("couldn't change text segment memory protection")?;
+
+        // apply patches
+        apply_patches(game.process_handle()).context("couldn't apply mod patches")?;
+
+        // Change memory protection flags back
+        let _ = win::virtual_protect_ex(game.process_handle(), mem_info.BaseAddress, mem_info.RegionSize, oldflags).context("couldn't change text segment memory protection back to original value")?;
+
+        // Resume main thread, actually starting the game
+        game.resume().context("couldn't resume game process after applying patch")?;
+    }
+
+    Ok(())
 }

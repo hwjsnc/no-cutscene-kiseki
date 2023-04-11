@@ -76,25 +76,16 @@ pub unsafe fn create_process_w(
 where {
     let mut process_info = windows::Win32::System::Threading::PROCESS_INFORMATION::default();
     let ret = windows::Win32::System::Threading::CreateProcessW(
-        name,
-        command_line,
-        process_attributes,
-        thread_attributes,
-        inherit_handles,
-        creation_flags,
-        environment,
-        current_directory,
-        startup_info,
-        // name: full path and file name (or partial file name) windows::core::PCWSTR
-        // command line: can be null, in which case name is the command line
-        // process & thread security attributes: whether handles can be inherited by child processes; if null: no
-        // inherit_handles: called process inherits handles from calling process - probably want no?
-        // creation flags: e.g. create suspended process
-        // environment: env, should probably be null
-        // current directory: if null, caller's
-        // startupinfo: various startup options, most of these can probably be 0
-        // processinfo: returns info about the new process; handles must be closed with CloseHandle
-        std::ptr::addr_of_mut!(process_info),
+        name,                                 // full path and file name (or partial file name), can be null
+        command_line,                         // can be null
+        process_attributes,                   // can handles be inherited? if null: no
+        thread_attributes,                    // same
+        inherit_handles,                      // child process inherits handles from calling process
+        creation_flags,                       // creation flags, e.g. suspended process
+        environment,                          // environment, as a string of key=value lines
+        current_directory,                    // if null, caller's
+        startup_info,                         // processinfo: various startup options, can be fully zero
+        std::ptr::addr_of_mut!(process_info), // processinfo: returns info about the new process; handles must be closed with CloseHandle
     );
     if ret.0 != 0 {
         Ok(process_info)
@@ -103,46 +94,22 @@ where {
     }
 }
 
-pub struct ProcessCreationOptions {
-    name: windows::core::HSTRING,
-    flags: windows::Win32::System::Threading::PROCESS_CREATION_FLAGS,
-}
-
-impl ProcessCreationOptions {
-    pub fn new() -> Self {
-        Self {
-            name: windows::core::HSTRING::new(),
-            flags: windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(0),
-        }
-    }
-
-    pub fn with_name(mut self, path: &std::path::Path) -> Self {
-        self.name = path.into();
-        self
-    }
-
-    pub fn with_flags(mut self, flags: windows::Win32::System::Threading::PROCESS_CREATION_FLAGS) -> Self {
-        self.flags = flags;
-        self
+pub unsafe fn resume_thread(handle: windows::Win32::Foundation::HANDLE) -> std::io::Result<u32> {
+    let ret = windows::Win32::System::Threading::ResumeThread(handle);
+    if ret == -1_i32 as u32 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(ret)
     }
 }
 
-pub unsafe fn create_process_w_simplified(opts: &ProcessCreationOptions) -> std::io::Result<windows::Win32::System::Threading::PROCESS_INFORMATION> {
-    // we let the callee inherit our own startup info
-    let mut startup_info = windows::Win32::System::Threading::STARTUPINFOW::default();
-    windows::Win32::System::Threading::GetStartupInfoW(std::ptr::addr_of_mut!(startup_info));
-
-    create_process_w(
-        windows::core::PCWSTR(opts.name.as_ptr()), // name
-        windows::core::PWSTR(0 as *mut u16),       // command line (null)
-        None,                                      // process security attributes
-        None,                                      // thread security attributes
-        false,                                     // inherit handles?
-        opts.flags,                                // process creation flags
-        None,                                      // environment
-        windows::core::PCWSTR(0 as *const u16),    // working directory
-        &startup_info,                             // startup info
-    )
+pub unsafe fn terminate_process(handle: windows::Win32::Foundation::HANDLE, exit_code: u32) -> std::io::Result<()> {
+    let ret = windows::Win32::System::Threading::TerminateProcess(handle, exit_code);
+    if ret.0 != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 pub unsafe fn close_handle(handle: windows::Win32::Foundation::HANDLE) -> std::io::Result<()> {
@@ -164,3 +131,9 @@ pub fn get_drives_with_fallback() -> impl Iterator<Item = char> {
         (drives >> n) & 1 != 0
     })
 }
+
+// process creation flags (we just need one)
+pub use windows::Win32::System::Threading::CREATE_SUSPENDED;
+
+// page protection flags (we just need one)
+pub use windows::Win32::System::Memory::PAGE_READWRITE;

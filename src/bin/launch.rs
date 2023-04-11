@@ -1,78 +1,17 @@
-use common::{find_install_folder, install_folder_seems_valid, try_patch, InstallFolder};
+use common::{find_install_folder, install_folder_seems_valid, run_and_patch_game, InstallFolder};
 
-use anyhow::Context as _;
+use clap::Parser;
+
 use fltk::prelude::GroupExt as _;
 use fltk::prelude::InputExt as _;
 use fltk::prelude::WidgetBase as _;
 use fltk::prelude::WidgetExt as _;
 
-unsafe fn query_memory(handle: windows::Win32::Foundation::HANDLE, address: Option<*const core::ffi::c_void>) -> Result<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION, std::io::Error> {
-    let mut mem_info = windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION::default();
-    let ret = windows::Win32::System::Memory::VirtualQueryEx(
-        handle,
-        address,
-        std::ptr::addr_of_mut!(mem_info),
-        std::mem::size_of::<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION>(),
-    );
-    if ret == std::mem::size_of::<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION>() {
-        Ok(mem_info)
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-unsafe fn change_memory_protect(
-    handle: windows::Win32::Foundation::HANDLE,
-    address: *const core::ffi::c_void,
-    size: usize,
-    new_flags: windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS,
-) -> Result<windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS, std::io::Error> {
-    let mut old_flags = windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS::default();
-    let ret = windows::Win32::System::Memory::VirtualProtectEx(handle, address, size, new_flags, std::ptr::addr_of_mut!(old_flags));
-    if ret.0 != 0 {
-        Ok(old_flags)
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-fn launch_and_patch_game(exe: &std::path::Path) -> anyhow::Result<()> {
-    let child = std::process::Command::new(exe).spawn().with_context(|| format!("couldn't launch {}", exe.display()))?;
-
-    // wait 10 ms for the game to start up
-    std::thread::sleep(std::time::Duration::from_millis(10));
-
-    // get handle for VirtualQueryEx - could probably use the same if not for api version differences
-    let handle = unsafe {
-        windows::Win32::System::Threading::OpenProcess(
-            windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION
-                | windows::Win32::System::Threading::PROCESS_VM_OPERATION
-                | windows::Win32::System::Threading::PROCESS_VM_READ
-                | windows::Win32::System::Threading::PROCESS_VM_WRITE,
-            false,
-            child.id(),
-        )
-        .context("couldn't get game process handle for changing memory protect")?
-    };
-
-    // query text segment and change memory protection to rwx
-    let text_segment_offset = 0x140001000usize;
-    let mem_info = unsafe { query_memory(handle, Some(text_segment_offset as *const core::ffi::c_void)).context("querying process memory pages")? };
-
-    if mem_info.BaseAddress as usize + mem_info.RegionSize < 0x1403dfda3 {
-        return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
-    }
-
-    let rwx = windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS(0x40);
-    let oldflags = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, rwx).context("couldn't change memory protect flags to allow rwx")? };
-
-    // try patching game memory
-    unsafe { try_patch(handle).context("couldn't apply patch to autoskip cutscenes")? };
-
-    // change memory protection back to original value
-    let _ = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, oldflags).context("couldn't change memory protect flags back to old value after patching")? };
-
-    Ok(())
+#[derive(Parser)]
+struct Cmd {
+    /// Don't ask questions, just do your best. No GUI.
+    #[arg(long)]
+    just_do_it: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,6 +21,20 @@ enum Msg {
 }
 
 fn main() {
+    let Cmd { just_do_it } = Cmd::parse();
+    if just_do_it {
+        just_do_it_main()
+    } else {
+        gui_main()
+    }
+}
+
+fn just_do_it_main() {
+    let installation = find_install_folder().unwrap();
+    run_and_patch_game(&installation.exe).unwrap();
+}
+
+fn gui_main() {
     let mut installation = find_install_folder();
 
     let (sender, receiver) = fltk::app::channel();
@@ -160,7 +113,7 @@ fn main() {
             }
             Some(Msg::LaunchGame { exit_after }) => match (&installation).as_ref() {
                 Some(InstallFolder { dir: _, exe }) => {
-                    match launch_and_patch_game(&exe) {
+                    match run_and_patch_game(&exe) {
                         Ok(()) => {}
                         Err(err) => {
                             fltk::dialog::alert_default(&format!("Error:\n{:?}", err));

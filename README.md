@@ -30,7 +30,7 @@ Credits
 Thanks to:
 
 - Fontaino for testing
-- ⠋Sewer56⣠ for help with the win32 API
+- ⠋Sewer56⣠ and uyjulian for help with patching the running process
 - Twn and Kyuuhachi for help with reverse engineering
 - AdmiralCurtiss for [SenPatcher](https://github.com/AdmiralCurtiss/SenPatcher) which was useful for cross-referencing.
 
