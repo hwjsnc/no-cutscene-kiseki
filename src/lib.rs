@@ -44,51 +44,50 @@ pub fn find_install_folder() -> Option<InstallFolder> {
 
 unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
     handle: windows::Win32::Foundation::HANDLE,
-    description: &str,
     offset: usize,
     expected: &generic_array::GenericArray<u8, N>,
     new: Option<&generic_array::GenericArray<u8, N>>,
 ) -> anyhow::Result<()> {
     let mut actual: generic_array::GenericArray<u8, N> = generic_array::GenericArray::default();
-    win::read_process_memory(handle, offset as *const core::ffi::c_void, &mut actual).with_context(|| format!("couldn't read {description} from launched process"))?;
+    win::read_process_memory(handle, offset as *const core::ffi::c_void, &mut actual).context("couldn't read from process")?;
     if &actual == expected {
         if let Some(buf) = new {
-            win::write_process_memory(handle, offset as *mut core::ffi::c_void, &buf).with_context(|| format!("couldn't patch {description}"))?;
+            win::write_process_memory(handle, offset as *mut core::ffi::c_void, &buf).context("couldn't write to process")?;
         }
         anyhow::Ok(())
     } else if Some(&actual) == new {
-        Err(anyhow::Error::msg(format!("unexpected {description}: patch may have been applied already!")))
+        Err(anyhow::Error::msg("unexpected value: patch may have been applied already!"))
     } else {
-        Err(anyhow::Error::msg(format!("unexpected {description}: expected {expected:?}, got {actual:?}")))
+        Err(anyhow::Error::msg(format!("unexpected value: expected {expected:?}, got {actual:?}")))
     }
 }
 
 pub unsafe fn apply_patches(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
     // check game version
-    apply_patch(handle, "game version", 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into()))?;
+    apply_patch(handle, 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into())).context("couldn't update game version")?;
 
     // sets the "skip" flag to 0 at the end of a skipped cutscene
     apply_patch(
         handle,
-        "reset cutscene skip flag #1",
         0x14032a5b1,
         (&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00]).into(),
         Some((&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]).into()),
-    )?;
+    )
+    .context("couldn't patch cutscene flag setter 0x14032a5b1")?;
 
     // sets the "skip" flag to 0
     // not sure what the exact trigger here is, but it seems to run at the start of some cutscenes?
     // it also seems like it's always overridden by the above code, but it doesn't hurt to patch it out anyway
     apply_patch(
         handle,
-        "reset cutscene skip flag #2",
         0x1403dfda3,
         (&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00]).into(),
         Some((&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]).into()),
-    )?;
+    )
+    .context("couldn't patch cutscene flag setter 0x1403dfda3")?;
 
     // and finally set the "skip" flag itself to 1 once for good measure
-    apply_patch(handle, "set cutscene skip flag to 1", 0x1416c535d, (&[0x00]).into(), Some((&[0x01]).into()))?;
+    apply_patch(handle, 0x1416c535d, (&[0x00]).into(), Some((&[0x01]).into())).context("couldn't set cutscene skip flag")?;
 
     anyhow::Ok(())
 }
