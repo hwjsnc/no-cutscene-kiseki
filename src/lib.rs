@@ -282,7 +282,7 @@ where {
             drives = 0x04; // 3rd-least significant bit is set, corresponds to C drive
         }
         ('A'..='Z').filter(move |d| {
-            let n = (*d as u32 - 'A' as u32);
+            let n = *d as u32 - 'A' as u32;
             (drives >> n) & 1 != 0
         })
     }
