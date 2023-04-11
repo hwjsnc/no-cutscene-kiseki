@@ -20,6 +20,7 @@ pub fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
 pub fn find_install_folder() -> Option<InstallFolder> {
     let paths = [
         "GOG Games\\ToCS3",
+        "ToCS3",
         "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
         "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
     ];
