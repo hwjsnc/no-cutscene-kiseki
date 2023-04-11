@@ -1,6 +1,48 @@
 use anyhow::Context as _;
+use blake2::Digest as _;
 use process_memory::CopyAddress as _;
 use process_memory::PutAddress as _;
+
+pub struct InstallFolder {
+    pub dir: std::path::PathBuf,
+    pub exe: std::path::PathBuf,
+}
+
+pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(data: T) -> bool {
+    &blake2::Blake2b512::digest(data.as_ref())[..]
+        == hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff")
+}
+
+pub fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
+    installation.dir.is_dir()
+        && std::fs::read(&installation.exe)
+            .map(exe_hash_matches_1_05) // might be too strong of a check
+            .unwrap_or(false)
+}
+
+pub fn find_install_folder() -> Option<InstallFolder> {
+    let paths = [
+        "GOG Games\\ToCS3",
+        "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
+        "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
+    ];
+    let absolute_folders = win::get_drives_with_fallback()
+        .map(|drv| {
+            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
+            paths.map(|path| drv.join(path))
+        })
+        .flatten();
+    let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
+    let all_folders = relative_folders.chain(absolute_folders);
+    for dir in all_folders {
+        let exe = dir.join("bin/x64/ed8_3_PC.exe");
+        let i = InstallFolder { dir, exe };
+        if install_folder_seems_valid(&i) {
+            return Some(i);
+        }
+    }
+    None
+}
 
 fn apply_patch<N: generic_array::ArrayLength<u8>>(
     handle: &process_memory::ProcessHandle,
@@ -232,5 +274,16 @@ where {
         } else {
             Err(std::io::Error::last_os_error())
         }
+    }
+
+    pub fn get_drives_with_fallback() -> impl Iterator<Item = char> {
+        let mut drives = unsafe { windows::Win32::Storage::FileSystem::GetLogicalDrives() };
+        if drives == 0 {
+            drives = 0x04; // 3rd-least significant bit is set, corresponds to C drive
+        }
+        ('A'..='Z').filter(move |d| {
+            let n = (*d as u32 - 'A' as u32);
+            (drives >> n) & 1 != 0
+        })
     }
 }

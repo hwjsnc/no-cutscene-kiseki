@@ -1,57 +1,11 @@
-use common::try_patch;
+use common::{find_install_folder, install_folder_seems_valid, try_patch, InstallFolder};
 
 use anyhow::Context as _;
-use blake2::Digest as _;
 use fltk::prelude::GroupExt as _;
 use fltk::prelude::InputExt as _;
 use fltk::prelude::WidgetBase as _;
 use fltk::prelude::WidgetExt as _;
 use process_memory::TryIntoProcessHandle as _;
-
-struct InstallFolder {
-    dir: std::path::PathBuf,
-    exe: std::path::PathBuf,
-}
-
-fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
-    installation.dir.is_dir()
-        && std::fs::read(&installation.exe)
-            .map(|data| {
-                &blake2::Blake2b512::digest(&data)[..]
-                    == hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff")
-            })
-            .unwrap_or(false)
-}
-
-fn find_install_folder() -> Option<InstallFolder> {
-    let mut drvs = unsafe { windows::Win32::Storage::FileSystem::GetLogicalDrives() };
-    if drvs == 0 {
-        // 0 means Error
-        drvs = 4; // 3rd-most significant bit is set, corresponds to drive C
-    }
-    let drives = ('A'..='Z').filter(|drv| drvs & (1 << (*drv as u32 - 'A' as u32)) != 0);
-    let paths = [
-        "GOG Games\\ToCS3",
-        "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
-        "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
-    ];
-    let absolute_folders = drives
-        .map(|drv| {
-            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
-            paths.map(|path| drv.join(path))
-        })
-        .flatten();
-    let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
-    let all_folders = relative_folders.chain(absolute_folders);
-    for dir in all_folders {
-        let exe = dir.join("bin/x64/ed8_3_PC.exe");
-        let i = InstallFolder { dir, exe };
-        if install_folder_seems_valid(&i) {
-            return Some(i);
-        }
-    }
-    None
-}
 
 unsafe fn query_memory(handle: windows::Win32::Foundation::HANDLE, address: Option<*const core::ffi::c_void>) -> Result<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION, std::io::Error> {
     let mut mem_info = windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION::default();
