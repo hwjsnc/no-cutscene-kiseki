@@ -7,7 +7,6 @@ sources:
   - https://git.sr.ht/~quf/no-cutscene-kiseki
 artifacts:
   - no-cutscene-kiseki/target/x86_64-pc-windows-gnu/release/launch.exe
-  - no-cutscene-kiseki/target/x86_64-pc-windows-gnu/release/patch-running.exe
 tasks:
  - install-install-toolchain: |
     rustup install stable
