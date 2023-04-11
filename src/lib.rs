@@ -1,7 +1,5 @@
 use anyhow::Context as _;
 use blake2::Digest as _;
-use process_memory::CopyAddress as _;
-use process_memory::PutAddress as _;
 
 pub struct InstallFolder {
     pub dir: std::path::PathBuf,
@@ -44,19 +42,18 @@ pub fn find_install_folder() -> Option<InstallFolder> {
     None
 }
 
-fn apply_patch<N: generic_array::ArrayLength<u8>>(
-    handle: &process_memory::ProcessHandle,
+unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
+    handle: windows::Win32::Foundation::HANDLE,
     description: &str,
     offset: usize,
     expected: &generic_array::GenericArray<u8, N>,
     new: Option<&generic_array::GenericArray<u8, N>>,
 ) -> anyhow::Result<()> {
     let mut actual: generic_array::GenericArray<u8, N> = generic_array::GenericArray::default();
-    handle.copy_address(offset, &mut actual).with_context(|| format!("checking {description}"))?;
+    win::read_process_memory(handle, offset as *const core::ffi::c_void, &mut actual).with_context(|| format!("couldn't read {description} from launched process"))?;
     if &actual == expected {
-        if let Some(x) = new {
-            // TODO: fails on linux, probably need to ptrace the process first
-            handle.put_address(offset, x).with_context(|| format!("patching {description}"))?;
+        if let Some(buf) = new {
+            win::write_process_memory(handle, offset as *mut core::ffi::c_void, &buf).with_context(|| format!("couldn't patch {description}"))?;
         }
         anyhow::Ok(())
     } else if Some(&actual) == new {
@@ -66,7 +63,7 @@ fn apply_patch<N: generic_array::ArrayLength<u8>>(
     }
 }
 
-pub fn try_patch(handle: &process_memory::ProcessHandle) -> anyhow::Result<()> {
+pub unsafe fn try_patch(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
     // check game version
     apply_patch(handle, "game version", 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into()))?;
 

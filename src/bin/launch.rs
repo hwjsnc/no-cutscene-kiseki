@@ -5,7 +5,6 @@ use fltk::prelude::GroupExt as _;
 use fltk::prelude::InputExt as _;
 use fltk::prelude::WidgetBase as _;
 use fltk::prelude::WidgetExt as _;
-use process_memory::TryIntoProcessHandle as _;
 
 unsafe fn query_memory(handle: windows::Win32::Foundation::HANDLE, address: Option<*const core::ffi::c_void>) -> Result<windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION, std::io::Error> {
     let mut mem_info = windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION::default();
@@ -43,12 +42,6 @@ fn launch_and_patch_game(exe: &std::path::Path) -> anyhow::Result<()> {
     // wait 10 ms for the game to start up
     std::thread::sleep(std::time::Duration::from_millis(10));
 
-    // get handle
-    let pm_handle = process_memory::Pid::try_from(child.id())
-        .map_err(anyhow::Error::msg)
-        .and_then(|pid| pid.try_into_process_handle().map_err(anyhow::Error::msg))
-        .context("couldn't get game process handle for process-memory")?;
-
     // get handle for VirtualQueryEx - could probably use the same if not for api version differences
     let handle = unsafe {
         windows::Win32::System::Threading::OpenProcess(
@@ -74,7 +67,7 @@ fn launch_and_patch_game(exe: &std::path::Path) -> anyhow::Result<()> {
     let oldflags = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, rwx).context("couldn't change memory protect flags to allow rwx")? };
 
     // try patching game memory
-    try_patch(&pm_handle).context("couldn't apply patch to autoskip cutscenes")?;
+    unsafe { try_patch(handle).context("couldn't apply patch to autoskip cutscenes")? };
 
     // change memory protection back to original value
     let _ = unsafe { change_memory_protect(handle, mem_info.BaseAddress, mem_info.RegionSize, oldflags).context("couldn't change memory protect flags back to old value after patching")? };
