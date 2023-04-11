@@ -93,24 +93,6 @@ pub unsafe fn try_patch(handle: windows::Win32::Foundation::HANDLE) -> anyhow::R
     anyhow::Ok(())
 }
 
-pub fn message<S: AsRef<str>>(msg: S) {
-    let stdout_is_a_terminal = atty::is(atty::Stream::Stdout);
-    if stdout_is_a_terminal {
-        println!("{}", msg.as_ref());
-    } else {
-        fltk::dialog::message_default(msg.as_ref());
-    }
-}
-
-pub fn alert<S: AsRef<str>>(msg: S) {
-    let stderr_is_a_terminal = atty::is(atty::Stream::Stderr);
-    if stderr_is_a_terminal {
-        eprintln!("{}", msg.as_ref());
-    } else {
-        fltk::dialog::alert_default(msg.as_ref());
-    }
-}
-
 #[cfg(target_os = "windows")]
 mod win {
     // various rusty wrappers around the win32 API
