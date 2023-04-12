@@ -165,7 +165,7 @@ pub fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
             // Are our addresses of interest part of the page region?
             return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
         }
-        if rdata_mem_info.BaseAddress as usize + rdata_mem_info.RegionSize < 0x14032a5b1 {
+        if rdata_mem_info.BaseAddress as usize + rdata_mem_info.RegionSize < 0x140825d68 {
             return Err(anyhow::Error::msg("rdata segment page region is unexpectedly small, bailing out"));
         }
 
