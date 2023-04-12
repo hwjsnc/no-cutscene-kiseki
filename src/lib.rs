@@ -156,22 +156,32 @@ pub fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
         let mut game = SuspendedGameProcess::new(exe_path).context("couldn't launch suspended game process")?;
 
         // Obtain information about the text segment pages
-        let text_segment_offset = 0x140001000usize;
-        let mem_info = win::virtual_query_ex(game.process_handle(), Some(text_segment_offset as *const core::ffi::c_void)).context("couldn't query process memory pages")?;
-        if mem_info.BaseAddress as usize + mem_info.RegionSize < 0x1403dfda3 {
+        let text_offset = 0x140001000usize;
+        let rdata_offset = 0x1407ea000usize;
+        let text_mem_info = win::virtual_query_ex(game.process_handle(), Some(text_offset as *const core::ffi::c_void)).context("couldn't query process text pages")?;
+        let rdata_mem_info = win::virtual_query_ex(game.process_handle(), Some(rdata_offset as *const core::ffi::c_void)).context("couldn't query process rdata pages")?;
+
+        if text_mem_info.BaseAddress as usize + text_mem_info.RegionSize < 0x1403dfda3 {
             // Are our addresses of interest part of the page region?
             return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
+        }
+        if rdata_mem_info.BaseAddress as usize + rdata_mem_info.RegionSize < 0x14032a5b1 {
+            return Err(anyhow::Error::msg("rdata segment page region is unexpectedly small, bailing out"));
         }
 
         // Change memory protection flags
         let rw = win::PAGE_READWRITE;
-        let oldflags = win::virtual_protect_ex(game.process_handle(), mem_info.BaseAddress, mem_info.RegionSize, rw).context("couldn't change text segment memory protection")?;
+        let old_text_flags = win::virtual_protect_ex(game.process_handle(), text_mem_info.BaseAddress, text_mem_info.RegionSize, rw).context("couldn't change text memory protection")?;
+        let old_rdata_flags = win::virtual_protect_ex(game.process_handle(), rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, rw).context("couldn't change rdata memory protection")?;
 
         // apply patches
         apply_patches(game.process_handle()).context("couldn't apply mod patches")?;
 
         // Change memory protection flags back
-        let _ = win::virtual_protect_ex(game.process_handle(), mem_info.BaseAddress, mem_info.RegionSize, oldflags).context("couldn't change text segment memory protection back to original value")?;
+        let _ = win::virtual_protect_ex(game.process_handle(), text_mem_info.BaseAddress, text_mem_info.RegionSize, old_text_flags)
+            .context("couldn't change text memory protection back to original value")?;
+        let _ = win::virtual_protect_ex(game.process_handle(), rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, old_rdata_flags)
+            .context("couldn't change rdata memory protection back to original value")?;
 
         // Resume main thread, actually starting the game
         game.resume().context("couldn't resume game process after applying patch")?;

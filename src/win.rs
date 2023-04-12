@@ -132,6 +132,13 @@ pub fn get_drives_with_fallback() -> impl Iterator<Item = char> {
     })
 }
 
+// process handle rights
+pub use windows::Win32::System::Threading::PROCESS_ALL_ACCESS;
+pub use windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION;
+pub use windows::Win32::System::Threading::PROCESS_VM_OPERATION;
+pub use windows::Win32::System::Threading::PROCESS_VM_READ;
+pub use windows::Win32::System::Threading::PROCESS_VM_WRITE;
+
 // process creation flags (we just need one)
 pub use windows::Win32::System::Threading::CREATE_SUSPENDED;
 
