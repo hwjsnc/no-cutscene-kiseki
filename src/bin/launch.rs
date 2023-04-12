@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use common::{find_install_folder, install_folder_seems_valid, run_and_patch_game, InstallFolder};
 
 use clap::Parser;
