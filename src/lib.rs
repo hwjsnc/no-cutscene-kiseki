@@ -8,13 +8,99 @@ pub struct InstallFolder {
     pub exe: std::path::PathBuf,
 }
 
-pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(data: T) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExeVersion {
+    NisaV1_05En, // NISA version 1.05, english/french language
+    NisaV1_05Jp, // NISA version 1.05, english/french language
+}
+
+impl ExeVersion {
+    pub fn relative_path(&self) -> &'static str {
+        match self {
+            ExeVersion::NisaV1_05En => "bin\\x64\\ed8_3_PC.exe",
+            ExeVersion::NisaV1_05Jp => "bin\\x64\\ed8_3_PC_JP.exe",
+        }
+    }
+}
+
+pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(_data: T) -> bool {
     &blake2::Blake2b512::digest(data.as_ref())[..]
         == hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff")
 }
 
 pub fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
     installation.dir.is_dir() && installation.exe.is_file()
+}
+
+enum Language {
+    En,
+    Fr,
+    Jp,
+}
+
+fn identify_language() -> anyhow::Result<Language> {
+    let path = &std::path::Path::new("%LocalAppData%\\TrailsOfColdSteel3\\settings.xml");
+    let content = std::fs::read_to_string(path).with_context(|| format!("couldn't open settings file {:?}", path.display()))?;
+    // Yes this is ugly
+    // No I'm not adding an XML lib as a dependency just for this
+    if content.contains("<Language>English</Language>") {
+        Ok(Language::En)
+    } else if content.contains("<Language>Japanese</Language>") {
+        Ok(Language::Jp)
+    } else if content.contains("<Language>French</Language>") {
+        Ok(Language::Fr)
+    } else {
+        Err(anyhow::Error::msg(format!("settings file {} doesn't seem to contain a <Language> element", path.display())))
+    }
+}
+
+pub fn identify_version(base_path: &std::path::Path) -> anyhow::Result<ExeVersion> {
+    let language = identify_language().context("couldn't identify game language")?;
+
+    let (exe_path, known_hashes) = match language {
+        Language::En | Language::Fr => (
+            "bin\\x64\\ed8_3_PC.exe",
+            &[(
+                ExeVersion::NisaV1_05En,
+                hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff"),
+            )],
+        ),
+        Language::Jp => (
+            "bin\\x64\\ed8_3_PC_JP.exe",
+            &[(
+                ExeVersion::NisaV1_05Jp,
+                hex_literal::hex!("2e846b7f10bda3d3ae191d4391b35b879683f73628e9bcb8a93b10448e65ecf22a496e3fe90c06aa140bb75bdfc09965367d4209c6311272e67d9a208104da7d"),
+            )],
+        ),
+    };
+
+    let path = base_path.join(exe_path);
+    let data = std::fs::read(&path).with_context(|| format!("couldn't read executable file {}", path.display()))?;
+    let hash = blake2::Blake2b512::digest(&data);
+    for (exe_version, expected_hash) in known_hashes.iter().copied() {
+        if &hash[..] == expected_hash {
+            return Ok(exe_version);
+        }
+    }
+
+    Err(anyhow::Error::msg(format!("Executable file {} hash doesn't match any known one!", path.display())))
+}
+
+pub fn find_base_path() -> Option<std::path::PathBuf> {
+    let paths = [
+        "GOG Games\\ToCS3",
+        "ToCS3",
+        "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
+        "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
+    ];
+    let absolute_folders = win::get_drives_with_fallback()
+        .map(|drv| {
+            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
+            paths.map(|path| drv.join(path))
+        })
+        .flatten();
+    let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
+    relative_folders.chain(absolute_folders).into_iter().find(|path| path.is_dir())
 }
 
 pub fn find_install_folder() -> Option<InstallFolder> {
