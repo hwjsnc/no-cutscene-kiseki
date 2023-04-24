@@ -1,12 +1,7 @@
-pub mod win;
+use crate::win;
 
 use anyhow::Context as _;
 use blake2::Digest as _;
-
-pub struct InstallFolder {
-    pub dir: std::path::PathBuf,
-    pub exe: std::path::PathBuf,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExeVersion {
@@ -23,13 +18,9 @@ impl ExeVersion {
     }
 }
 
-pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(_data: T) -> bool {
+pub fn exe_hash_matches_1_05<T: AsRef<[u8]>>(data: T) -> bool {
     &blake2::Blake2b512::digest(data.as_ref())[..]
         == hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff")
-}
-
-pub fn install_folder_seems_valid(installation: &InstallFolder) -> bool {
-    installation.dir.is_dir() && installation.exe.is_file()
 }
 
 enum Language {
@@ -39,8 +30,11 @@ enum Language {
 }
 
 fn identify_language() -> anyhow::Result<Language> {
-    let path = &std::path::Path::new("%LocalAppData%\\TrailsOfColdSteel3\\settings.xml");
-    let content = std::fs::read_to_string(path).with_context(|| format!("couldn't open settings file {:?}", path.display()))?;
+    let local_app_data = win::get_local_app_data().context("couldn't find %LocalAppData%")?;
+    println!("{}", local_app_data.display());
+    let path = local_app_data.join("TrailsOfColdSteel3\\settings.xml");
+    println!("{}", path.display());
+    let content = std::fs::read_to_string(&path).with_context(|| format!("couldn't open settings file {:?}", path.display()))?;
     // Yes this is ugly
     // No I'm not adding an XML lib as a dependency just for this
     if content.contains("<Language>English</Language>") {
@@ -86,7 +80,7 @@ pub fn identify_version(base_path: &std::path::Path) -> anyhow::Result<ExeVersio
     Err(anyhow::Error::msg(format!("Executable file {} hash doesn't match any known one!", path.display())))
 }
 
-pub fn find_base_path() -> Option<std::path::PathBuf> {
+pub fn find_install_path() -> Option<std::path::PathBuf> {
     let paths = [
         "GOG Games\\ToCS3",
         "ToCS3",
@@ -100,32 +94,7 @@ pub fn find_base_path() -> Option<std::path::PathBuf> {
         })
         .flatten();
     let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
-    relative_folders.chain(absolute_folders).into_iter().find(|path| path.is_dir())
-}
-
-pub fn find_install_folder() -> Option<InstallFolder> {
-    let paths = [
-        "GOG Games\\ToCS3",
-        "ToCS3",
-        "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
-        "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
-    ];
-    let absolute_folders = win::get_drives_with_fallback()
-        .map(|drv| {
-            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
-            paths.map(|path| drv.join(path))
-        })
-        .flatten();
-    let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
-    let all_folders = relative_folders.chain(absolute_folders);
-    for dir in all_folders {
-        let exe = dir.join("bin\\x64\\ed8_3_PC.exe");
-        let i = InstallFolder { dir, exe };
-        if install_folder_seems_valid(&i) {
-            return Some(i);
-        }
-    }
-    None
+    relative_folders.chain(absolute_folders).into_iter().find(|path| path.is_dir() && path.join("bin\\x64").is_dir())
 }
 
 unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
@@ -148,7 +117,7 @@ unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
     }
 }
 
-pub unsafe fn apply_patches(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
+unsafe fn apply_patches(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
     // check game version
     apply_patch(handle, 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into())).context("couldn't update game version")?;
 
@@ -231,7 +200,7 @@ impl Drop for SuspendedGameProcess {
     }
 }
 
-pub fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
+fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
     // Check that we got the right exe
     let exe_data = std::fs::read(exe_path).context("couldn't check exe data")?;
     if !exe_hash_matches_1_05(&exe_data) {
@@ -274,4 +243,11 @@ pub fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+pub fn run_and_patch_new(path: &std::path::Path, version: ExeVersion) -> anyhow::Result<()> {
+    match version {
+        ExeVersion::NisaV1_05En => run_and_patch_game(&path.join(version.relative_path())),
+        ExeVersion::NisaV1_05Jp => todo!(),
+    }
 }

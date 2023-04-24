@@ -1,9 +1,13 @@
 #![windows_subsystem = "windows"]
 
-use common::{find_install_folder, install_folder_seems_valid, run_and_patch_game, InstallFolder};
+mod patch;
+mod win;
+
+use patch::{find_install_path, identify_version, run_and_patch_new};
 
 use clap::Parser;
 
+use anyhow::Context as _;
 use fltk::prelude::GroupExt as _;
 use fltk::prelude::InputExt as _;
 use fltk::prelude::WidgetBase as _;
@@ -22,22 +26,24 @@ enum Msg {
     LaunchGame { exit_after: bool },
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let Cmd { just_do_it } = Cmd::parse();
     if just_do_it {
         just_do_it_main()
     } else {
-        gui_main()
+        gui_main();
+        Ok(())
     }
 }
 
-fn just_do_it_main() {
-    let installation = find_install_folder().unwrap();
-    run_and_patch_game(&installation.exe).unwrap();
+fn just_do_it_main() -> anyhow::Result<()> {
+    let path = find_install_path().ok_or_else(|| anyhow::Error::msg("couldn't find install path"))?;
+    let version = identify_version(&path).context("couldn't determine game version")?;
+    run_and_patch_new(&path, version).context("couldn't launch patched game")
 }
 
 fn gui_main() {
-    let mut installation = find_install_folder();
+    let mut install_path = find_install_path();
 
     let (sender, receiver) = fltk::app::channel();
 
@@ -54,10 +60,11 @@ fn gui_main() {
 
     let mut folder_output = fltk::output::Output::default();
     folder_output.set_value(
-        &installation
+        install_path
             .as_ref()
-            .map(|i| std::borrow::Cow::Owned(format!("{}", i.dir.display())))
-            .unwrap_or(std::borrow::Cow::Borrowed("select game install path")),
+            .map(|dir| std::borrow::Cow::Owned(format!("{}", dir.display())))
+            .unwrap_or(std::borrow::Cow::Borrowed("select game install path"))
+            .as_ref(),
     );
 
     let mut folder_select_button = fltk::button::Button::default().with_label("Choose game folder");
@@ -76,7 +83,7 @@ fn gui_main() {
     let mut launch_game_and_exit_button = fltk::button::Button::default().with_label("Launch Game && Exit");
     launch_game_and_exit_button.emit(sender.clone(), Msg::LaunchGame { exit_after: true });
     flex_row.end();
-    if installation.is_some() {
+    if install_path.is_some() {
         launch_game_button.activate();
         launch_game_and_exit_button.activate();
     } else {
@@ -101,21 +108,23 @@ fn gui_main() {
                 diag.show();
                 let dir = diag.filename();
                 if !dir.as_os_str().is_empty() {
-                    let exe = dir.join("bin/x64/ed8_3_PC.exe");
-                    let ins = InstallFolder { dir, exe };
-                    if install_folder_seems_valid(&ins) {
-                        folder_output.set_label(&format!("{}", ins.dir.display()));
-                        installation = Some(ins);
+                    if dir.is_dir() {
+                        folder_output.set_label(&format!("{}", dir.display()));
+                        install_path = Some(dir);
                         launch_game_button.activate();
                         launch_game_and_exit_button.activate();
                     } else {
-                        fltk::dialog::alert_default(&format!("'{}' doesn't look a valid installation path", ins.dir.display()));
+                        fltk::dialog::alert_default(&format!("Error: '{}' doesn't look a valid installation path", dir.display()));
                     }
                 }
             }
-            Some(Msg::LaunchGame { exit_after }) => match (&installation).as_ref() {
-                Some(InstallFolder { dir: _, exe }) => {
-                    match run_and_patch_game(&exe) {
+            Some(Msg::LaunchGame { exit_after }) => match (&install_path).as_ref() {
+                Some(path) => {
+                    match identify_version(&path)
+                        .context("couldn't identify game version")
+                        .and_then(|version| run_and_patch_new(&path, version))
+                        .context("couldn't launch game")
+                    {
                         Ok(()) => {}
                         Err(err) => {
                             fltk::dialog::alert_default(&format!("Error:\n{:?}", err));

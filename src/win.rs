@@ -132,6 +132,20 @@ pub fn get_drives_with_fallback() -> impl Iterator<Item = char> {
     })
 }
 
+pub fn get_local_app_data() -> std::io::Result<std::path::PathBuf> {
+    unsafe {
+        let ptr = windows::Win32::UI::Shell::SHGetKnownFolderPath(
+            &windows::Win32::UI::Shell::FOLDERID_LocalAppData,
+            windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG::default(),
+            windows::Win32::Foundation::HANDLE::default(),
+        )?;
+        assert!(!ptr.is_null());
+        let path = std::path::PathBuf::from(ptr.to_hstring()?.to_os_string());
+        windows::Win32::System::Com::CoTaskMemFree(Some(ptr.0 as *const std::ffi::c_void));
+        Ok(path)
+    }
+}
+
 // process handle rights
 pub use windows::Win32::System::Threading::PROCESS_ALL_ACCESS;
 pub use windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION;

@@ -3,13 +3,6 @@ name = "no-cutscene-kiseki"
 version = "0.0.3"
 edition = "2021"
 
-[lib]
-name = "common"
-path = "src/lib.rs"
-
-[[bin]]
-name = "launch"
-
 [profile.release]
 # runtime performance is basically irrelevant, so we optimize for binary size as far as possible.
 opt-level = "z"
@@ -24,4 +17,4 @@ clap = { version = "4.1", default-features = false, features = ["std", "derive"]
 fltk = "1.4.0"
 generic-array = "0.14.7"
 hex-literal = "0.3.4"
-windows = { version = "0.48.0", features = [ "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_Threading" ]}
+windows = { version = "0.48.0", features = [ "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_SystemInformation", "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_System_Threading", "Win32_UI_Shell" ]}
