@@ -58,6 +58,7 @@ pub unsafe fn write_process_memory(handle: windows::Win32::Foundation::HANDLE, t
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn create_process_w(
     name: windows::core::PCWSTR,
     command_line: windows::core::PWSTR,

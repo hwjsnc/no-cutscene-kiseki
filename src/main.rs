@@ -68,7 +68,7 @@ fn gui_main() {
     );
 
     let mut folder_select_button = fltk::button::Button::default().with_label("Choose game folder");
-    folder_select_button.emit(sender.clone(), Msg::FolderSelect);
+    folder_select_button.emit(sender, Msg::FolderSelect);
 
     flex_row.end();
     flex_row.set_size(&folder_select_button, 150);
@@ -78,10 +78,10 @@ fn gui_main() {
     flex_row.set_type(fltk::group::FlexType::Row);
 
     let mut launch_game_button = fltk::button::Button::default().with_label("Launch Game");
-    launch_game_button.emit(sender.clone(), Msg::LaunchGame { exit_after: false });
+    launch_game_button.emit(sender, Msg::LaunchGame { exit_after: false });
 
     let mut launch_game_and_exit_button = fltk::button::Button::default().with_label("Launch Game && Exit");
-    launch_game_and_exit_button.emit(sender.clone(), Msg::LaunchGame { exit_after: true });
+    launch_game_and_exit_button.emit(sender, Msg::LaunchGame { exit_after: true });
     flex_row.end();
     if install_path.is_some() {
         launch_game_button.activate();
@@ -118,11 +118,11 @@ fn gui_main() {
                     }
                 }
             }
-            Some(Msg::LaunchGame { exit_after }) => match (&install_path).as_ref() {
+            Some(Msg::LaunchGame { exit_after }) => match install_path.as_ref() {
                 Some(path) => {
-                    match identify_version(&path)
+                    match identify_version(path)
                         .context("couldn't identify game version")
-                        .and_then(|version| run_and_patch(&path, version))
+                        .and_then(|version| run_and_patch(path, version))
                         .context("couldn't launch game")
                     {
                         Ok(()) => {}

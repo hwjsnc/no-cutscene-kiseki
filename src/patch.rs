@@ -61,8 +61,8 @@ pub fn identify_version(base_path: &std::path::Path) -> anyhow::Result<ExeVersio
     let path = base_path.join(exe_path);
     let data = std::fs::read(&path).with_context(|| format!("couldn't read executable file {}", path.display()))?;
     let hash = blake2::Blake2b512::digest(&data);
-    for version in known_versions.into_iter().copied() {
-        if &hash[..] == version.expected_blake2b_hash() {
+    for version in known_versions.iter().copied() {
+        if hash[..] == version.expected_blake2b_hash() {
             return Ok(version);
         }
     }
@@ -77,14 +77,12 @@ pub fn find_install_path() -> Option<std::path::PathBuf> {
         "Program Files (x86)\\Steam\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
         "SteamLibrary\\steamapps\\common\\The Legend of Heroes Trails of Cold Steel III",
     ];
-    let absolute_folders = win::get_drives_with_fallback()
-        .map(|drv| {
-            let drv = std::path::PathBuf::from(format!("{drv}:\\"));
-            paths.map(|path| drv.join(path))
-        })
-        .flatten();
+    let absolute_folders = win::get_drives_with_fallback().flat_map(|drv| {
+        let drv = std::path::PathBuf::from(format!("{drv}:\\"));
+        paths.map(|path| drv.join(path))
+    });
     let relative_folders = ["."].into_iter().map(std::path::PathBuf::from);
-    relative_folders.chain(absolute_folders).into_iter().find(|path| path.is_dir() && path.join("bin\\x64").is_dir())
+    relative_folders.chain(absolute_folders).find(|path| path.is_dir() && path.join("bin\\x64").is_dir())
 }
 
 struct Patch<'a> {
@@ -159,14 +157,14 @@ impl SuspendedGameProcess {
         let name = windows::core::HSTRING::from(exe_path);
 
         let proc_info = win::create_process_w(
-            windows::core::PCWSTR(name.as_ptr()),   // name
-            windows::core::PWSTR(0 as *mut u16),    // command_line
-            None,                                   // process security attributes
-            None,                                   // thread security attributes
-            false,                                  // inherit handles?
-            win::CREATE_SUSPENDED,                  // creation flags
-            None,                                   // environment
-            windows::core::PCWSTR(0 as *const u16), // working directory
+            windows::core::PCWSTR(name.as_ptr()), // name
+            windows::core::PWSTR::null(),         // command_line
+            None,                                 // process security attributes
+            None,                                 // thread security attributes
+            false,                                // inherit handles?
+            win::CREATE_SUSPENDED,                // creation flags
+            None,                                 // environment
+            windows::core::PCWSTR::null(),        // working directory
             &startup_info,
         )?;
 
@@ -209,7 +207,7 @@ pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Res
     let exe_path = path.join(version.relative_path());
     let exe_data = std::fs::read(&exe_path).context("couldn't check exe data")?;
     let exe_hash = blake2::Blake2b512::digest(&exe_data);
-    if &exe_hash[..] != version.expected_blake2b_hash() {
+    if exe_hash[..] != version.expected_blake2b_hash() {
         return Err(anyhow::Error::msg("Unexpected executable. Are you sure this is the right version?"));
     }
 
