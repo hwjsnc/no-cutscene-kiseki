@@ -9,6 +9,7 @@ Cutscenes that cannot be skipped this way in the original game are not changed: 
 [Video demo (on youtube)](https://www.youtube.com/watch?v=2BkCd9lfyQQ)
 
 The only currently supported version is the version 1.05 of the NISA PC port.
+French and Japanese languages have not been extensively tested.
 
 Usage
 -----
