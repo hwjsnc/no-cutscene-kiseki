@@ -88,7 +88,7 @@ pub fn find_install_path() -> Option<std::path::PathBuf> {
 }
 
 struct Patch<'a> {
-    name: &'a str,
+    description: &'a str,
     offset: usize,
     expected: &'a [u8],
     replacement: Option<&'a [u8]>,
@@ -114,7 +114,7 @@ unsafe fn apply_patch(
         Err(anyhow::Error::msg("unexpected value: patch may have been applied already!"))
     } else {
         Err(anyhow::Error::msg(format!(
-            "unexpected values at offset {:x}: expected {:?}, got {:?}",
+            "unexpected values at offset 0x{:x}: expected {:x?}, got {:x?}",
             patch.offset, patch.expected, buf
         )))
     }
@@ -128,17 +128,17 @@ unsafe fn apply_patches(
     // before patching anything, confirm that all target data is correct
     for patch in patches {
         let p = Patch {
-            name: patch.name,
+            description: patch.description,
             offset: patch.offset,
             expected: patch.expected,
             replacement: None,
         };
         assert!(buf.len() >= patch.expected.len());
-        apply_patch(handle, &p, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't apply patch {}", patch.name))?;
+        apply_patch(handle, &p, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't patch {}", patch.description))?;
     }
     // now actually apply the patches
     for patch in patches {
-        apply_patch(handle, patch, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't apply patch {}", patch.name))?;
+        apply_patch(handle, patch, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't patch {}", patch.description))?;
     }
     Ok(())
 }
@@ -226,36 +226,53 @@ pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Res
         },
     };
 
-    let patches = match version {
+    let patches: &[Patch] = match version {
         ExeVersion::NisaV1_05En => &[
             Patch {
-                name: "game version",
+                description: "game version",
                 offset: 0x140825d68,
                 expected: b"ToCSIII PC Version 1.05\0",
                 replacement: Some(b"ToCS3 1.05 autoskip mod\0"),
             },
             Patch {
-                name: "skip flag setter",
+                description: "the part that sets the flag when starting a new cutscene", // or something like that
                 offset: 0x14032a5b1,
                 expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
                 replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
             },
             Patch {
-                name: "skip flag setter",
+                description: "the part that resets the flag at the end of a skipped scene",
                 offset: 0x1403dfda3,
                 expected: &[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RAX + 0x3d3d],0x00
                 replacement: Some(&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RAX + 0x3d3d],0x01
             },
             Patch {
-                name: "skip flag",
+                description: "skip flag",
                 offset: 0x1416c535d,
                 expected: &[0x00],
                 replacement: Some(&[0x01]),
             },
         ],
-        ExeVersion::NisaV1_05Jp => {
-            return Err(anyhow::Error::msg("TODO: japanese is not supported yet"));
-        }
+        ExeVersion::NisaV1_05Jp => &[
+            Patch {
+                description: "game version",
+                offset: 0x140811320,
+                expected: b"ToCSIII PC Version 1.05\0",
+                replacement: Some(b"ToCS3 1.05 autoskip mod\0"),
+            },
+            Patch {
+                description: "the part that resets the flag at the end of a skipped scene", // and probably at other times too because it seems we only need to patch this
+                offset: 0x1403210a1,
+                expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
+                replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
+            },
+            Patch {
+                description: "skip flag",
+                offset: 0x1416af22d,
+                expected: &[0x00],
+                replacement: Some(&[0x01]),
+            },
+        ],
     };
 
     // check patches
