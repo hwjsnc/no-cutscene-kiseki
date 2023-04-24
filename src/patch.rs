@@ -87,54 +87,60 @@ pub fn find_install_path() -> Option<std::path::PathBuf> {
     relative_folders.chain(absolute_folders).into_iter().find(|path| path.is_dir() && path.join("bin\\x64").is_dir())
 }
 
-unsafe fn apply_patch<N: generic_array::ArrayLength<u8>>(
-    handle: windows::Win32::Foundation::HANDLE,
+struct Patch<'a> {
+    name: &'a str,
     offset: usize,
-    expected: &generic_array::GenericArray<u8, N>,
-    new: Option<&generic_array::GenericArray<u8, N>>,
+    expected: &'a [u8],
+    replacement: Option<&'a [u8]>,
+}
+
+unsafe fn apply_patch(
+    handle: windows::Win32::Foundation::HANDLE,
+    patch: &Patch,
+    buf: &mut [u8], // scratch buffer, must have the same length as expected target data
 ) -> anyhow::Result<()> {
-    let mut actual: generic_array::GenericArray<u8, N> = generic_array::GenericArray::default();
-    win::read_process_memory(handle, offset as *const core::ffi::c_void, &mut actual).context("couldn't read from process")?;
-    if &actual == expected {
-        if let Some(buf) = new {
-            win::write_process_memory(handle, offset as *mut core::ffi::c_void, &buf).context("couldn't write to process")?;
+    // Check that we have enough memory
+    assert_eq!(buf.len(), patch.expected.len());
+    if let Some(new) = patch.replacement {
+        assert_eq!(new.len(), patch.expected.len());
+    }
+    win::read_process_memory(handle, patch.offset as *const core::ffi::c_void, buf).context("couldn't read from process")?;
+    if buf == patch.expected {
+        if let Some(new) = patch.replacement {
+            win::write_process_memory(handle, patch.offset as *mut core::ffi::c_void, new).context("couldn't write to process")?;
         }
         anyhow::Ok(())
-    } else if Some(&actual) == new {
+    } else if Some(buf as &[u8]) == patch.replacement {
         Err(anyhow::Error::msg("unexpected value: patch may have been applied already!"))
     } else {
-        Err(anyhow::Error::msg(format!("unexpected value: expected {expected:?}, got {actual:?}")))
+        Err(anyhow::Error::msg(format!(
+            "unexpected values at offset {:x}: expected {:?}, got {:?}",
+            patch.offset, patch.expected, buf
+        )))
     }
 }
 
-unsafe fn apply_patches(handle: windows::Win32::Foundation::HANDLE) -> anyhow::Result<()> {
-    // check game version
-    apply_patch(handle, 0x140825d68, b"ToCSIII PC Version 1.05\0".into(), Some(b"ToCS3 1.05 autoskip mod\0".into())).context("couldn't update game version")?;
-
-    // sets the "skip" flag to 0 at the end of a skipped cutscene
-    apply_patch(
-        handle,
-        0x14032a5b1,
-        (&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00]).into(),
-        Some((&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]).into()),
-    )
-    .context("couldn't patch cutscene flag setter 0x14032a5b1")?;
-
-    // sets the "skip" flag to 0
-    // not sure what the exact trigger here is, but it seems to run at the start of some cutscenes?
-    // it also seems like it's always overridden by the above code, but it doesn't hurt to patch it out anyway
-    apply_patch(
-        handle,
-        0x1403dfda3,
-        (&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00]).into(),
-        Some((&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]).into()),
-    )
-    .context("couldn't patch cutscene flag setter 0x1403dfda3")?;
-
-    // and finally set the "skip" flag itself to 1 once for good measure
-    apply_patch(handle, 0x1416c535d, (&[0x00]).into(), Some((&[0x01]).into())).context("couldn't set cutscene skip flag")?;
-
-    anyhow::Ok(())
+unsafe fn apply_patches(
+    handle: windows::Win32::Foundation::HANDLE,
+    patches: &[Patch],
+    buf: &mut [u8], // scratch buffer, must be at least as long as the largest patch data
+) -> anyhow::Result<()> {
+    // before patching anything, confirm that all target data is correct
+    for patch in patches {
+        let p = Patch {
+            name: patch.name,
+            offset: patch.offset,
+            expected: patch.expected,
+            replacement: None,
+        };
+        assert!(buf.len() >= patch.expected.len());
+        apply_patch(handle, &p, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't apply patch {}", patch.name))?;
+    }
+    // now actually apply the patches
+    for patch in patches {
+        apply_patch(handle, patch, &mut buf[..patch.expected.len()]).with_context(|| format!("couldn't apply patch {}", patch.name))?;
+    }
+    Ok(())
 }
 
 // This struct represents the suspended game process
@@ -190,55 +196,112 @@ impl Drop for SuspendedGameProcess {
     }
 }
 
-fn run_and_patch_game(exe_path: &std::path::Path) -> anyhow::Result<()> {
-    // Check that we got the right exe
-    let exe_data = std::fs::read(exe_path).context("couldn't check exe data")?;
+struct Offsets {
+    text: std::ops::Range<usize>,
+    rdata: std::ops::Range<usize>,
+    data: std::ops::Range<usize>,
+}
+
+pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Result<()> {
+    // check that we got the right exe
+    // Do not delete this check! Right now we determine the game version by checking the hash, so we can only pass the correct version here.
+    // In the future, I may add such an option and when that happens, this check is vital to avoid errors when the user selects a wrong version!
+    let exe_path = path.join(version.relative_path());
+    let exe_data = std::fs::read(&exe_path).context("couldn't check exe data")?;
     let exe_hash = blake2::Blake2b512::digest(&exe_data);
-    if &exe_hash[..] != ExeVersion::NisaV1_05En.expected_blake2b_hash() {
+    if &exe_hash[..] != version.expected_blake2b_hash() {
         return Err(anyhow::Error::msg("Unexpected executable. Are you sure this is the right version?"));
     }
 
+    let off = match version {
+        ExeVersion::NisaV1_05En => Offsets {
+            text: 0x140001000..0x1407e97ff,
+            rdata: 0x1407ea000..0x140a1b7ff,
+            data: 0x140a1c000..0x141d73300,
+        },
+        ExeVersion::NisaV1_05Jp => Offsets {
+            text: 0x140001000..0x1407dc7ff,
+            rdata: 0x1407dd000..0x140a05dff,
+            data: 0x140a06000..0x141d5d140,
+        },
+    };
+
+    let patches = match version {
+        ExeVersion::NisaV1_05En => &[
+            Patch {
+                name: "game version",
+                offset: 0x140825d68,
+                expected: b"ToCSIII PC Version 1.05\0",
+                replacement: Some(b"ToCS3 1.05 autoskip mod\0"),
+            },
+            Patch {
+                name: "skip flag setter",
+                offset: 0x14032a5b1,
+                expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
+                replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
+            },
+            Patch {
+                name: "skip flag setter",
+                offset: 0x1403dfda3,
+                expected: &[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RAX + 0x3d3d],0x00
+                replacement: Some(&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RAX + 0x3d3d],0x01
+            },
+            Patch {
+                name: "skip flag",
+                offset: 0x1416c535d,
+                expected: &[0x00],
+                replacement: Some(&[0x01]),
+            },
+        ],
+        ExeVersion::NisaV1_05Jp => {
+            return Err(anyhow::Error::msg("TODO: japanese is not supported yet"));
+        }
+    };
+
+    // check patches
+    for patch in patches {
+        assert!(
+            (off.text.contains(&patch.offset) && off.text.contains(&(patch.offset + patch.expected.len())))
+                || (off.data.contains(&patch.offset) && off.data.contains(&(patch.offset + patch.expected.len())))
+                || (off.rdata.contains(&patch.offset) && off.rdata.contains(&(patch.offset + patch.expected.len())))
+        );
+    }
+
+    let mut buf = [0u8; 24]; // must be at least as long as the longest patch
+
     unsafe {
-        let mut game = SuspendedGameProcess::new(exe_path).context("couldn't launch suspended game process")?;
+        // launch game, suspended
+        let mut game = SuspendedGameProcess::new(&exe_path).context("couldn't launch suspended game process")?;
+        let handle = game.process_handle();
 
-        // Obtain information about the text segment pages
-        let text_offset = 0x140001000usize;
-        let rdata_offset = 0x1407ea000usize;
-        let text_mem_info = win::virtual_query_ex(game.process_handle(), Some(text_offset as *const core::ffi::c_void)).context("couldn't query process text pages")?;
-        let rdata_mem_info = win::virtual_query_ex(game.process_handle(), Some(rdata_offset as *const core::ffi::c_void)).context("couldn't query process rdata pages")?;
+        // Obtain information about segment pages
+        let text_mem_info = win::virtual_query_ex(handle, Some(off.text.start as *const std::ffi::c_void)).context("couldn't query process text pages")?;
+        let rdata_mem_info = win::virtual_query_ex(handle, Some(off.rdata.start as *const std::ffi::c_void)).context("couldn't query process rdata pages")?;
+        // No need to update data segment, it should be R/W anyway
 
-        if text_mem_info.BaseAddress as usize + text_mem_info.RegionSize < 0x1403dfda3 {
+        if text_mem_info.BaseAddress as usize + text_mem_info.RegionSize < off.text.end {
             // Are our addresses of interest part of the page region?
             return Err(anyhow::Error::msg("text segment page region is unexpectedly small, bailing out"));
         }
-        if rdata_mem_info.BaseAddress as usize + rdata_mem_info.RegionSize < 0x140825d68 {
+        if rdata_mem_info.BaseAddress as usize + rdata_mem_info.RegionSize < off.text.end {
             return Err(anyhow::Error::msg("rdata segment page region is unexpectedly small, bailing out"));
         }
 
         // Change memory protection flags
         let rw = win::PAGE_READWRITE;
-        let old_text_flags = win::virtual_protect_ex(game.process_handle(), text_mem_info.BaseAddress, text_mem_info.RegionSize, rw).context("couldn't change text memory protection")?;
-        let old_rdata_flags = win::virtual_protect_ex(game.process_handle(), rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, rw).context("couldn't change rdata memory protection")?;
+        let old_text_flags = win::virtual_protect_ex(handle, text_mem_info.BaseAddress, text_mem_info.RegionSize, rw).context("couldn't change text memory protection")?;
+        let old_rdata_flags = win::virtual_protect_ex(handle, rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, rw).context("couldn't change rdata memory protection")?;
 
         // apply patches
-        apply_patches(game.process_handle()).context("couldn't apply mod patches")?;
+        apply_patches(handle, patches, &mut buf[..]).context("couldn't patch game")?;
 
         // Change memory protection flags back
-        let _ = win::virtual_protect_ex(game.process_handle(), text_mem_info.BaseAddress, text_mem_info.RegionSize, old_text_flags)
-            .context("couldn't change text memory protection back to original value")?;
-        let _ = win::virtual_protect_ex(game.process_handle(), rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, old_rdata_flags)
-            .context("couldn't change rdata memory protection back to original value")?;
+        let _ = win::virtual_protect_ex(handle, text_mem_info.BaseAddress, text_mem_info.RegionSize, old_text_flags).context("couldn't change text memory protection back to original value")?;
+        let _ = win::virtual_protect_ex(handle, rdata_mem_info.BaseAddress, rdata_mem_info.RegionSize, old_rdata_flags).context("couldn't change rdata memory protection back to original value")?;
 
         // Resume main thread, actually starting the game
         game.resume().context("couldn't resume game process after applying patch")?;
     }
 
     Ok(())
-}
-
-pub fn run_and_patch_new(path: &std::path::Path, version: ExeVersion) -> anyhow::Result<()> {
-    match version {
-        ExeVersion::NisaV1_05En => run_and_patch_game(&path.join(version.relative_path())),
-        ExeVersion::NisaV1_05Jp => Err(anyhow::Error::msg("TODO: japanese is not supported yet")),
-    }
 }

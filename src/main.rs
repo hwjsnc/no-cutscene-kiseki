@@ -3,7 +3,7 @@
 mod patch;
 mod win;
 
-use patch::{find_install_path, identify_version, run_and_patch_new};
+use patch::{find_install_path, identify_version, run_and_patch};
 
 use clap::Parser;
 
@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
 fn just_do_it_main() -> anyhow::Result<()> {
     let path = find_install_path().ok_or_else(|| anyhow::Error::msg("couldn't find install path"))?;
     let version = identify_version(&path).context("couldn't determine game version")?;
-    run_and_patch_new(&path, version).context("couldn't launch patched game")
+    run_and_patch(&path, version).context("couldn't launch patched game")
 }
 
 fn gui_main() {
@@ -122,7 +122,7 @@ fn gui_main() {
                 Some(path) => {
                     match identify_version(&path)
                         .context("couldn't identify game version")
-                        .and_then(|version| run_and_patch_new(&path, version))
+                        .and_then(|version| run_and_patch(&path, version))
                         .context("couldn't launch game")
                     {
                         Ok(()) => {}
