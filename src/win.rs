@@ -26,10 +26,6 @@ pub unsafe fn virtual_protect_ex(
     }
 }
 
-pub unsafe fn open_process(rights: windows::Win32::System::Threading::PROCESS_ACCESS_RIGHTS, inherit_handle: bool, process: u32) -> Result<windows::Win32::Foundation::HANDLE, windows::core::Error> {
-    windows::Win32::System::Threading::OpenProcess(rights, inherit_handle, process)
-}
-
 pub unsafe fn read_process_memory(handle: windows::Win32::Foundation::HANDLE, source: *const core::ffi::c_void, target: &mut [u8]) -> std::io::Result<usize> {
     let mut number_of_bytes_read = 0;
     let ret = windows::Win32::System::Diagnostics::Debug::ReadProcessMemory(
