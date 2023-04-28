@@ -11,6 +11,8 @@ Cutscenes that cannot be skipped this way in the original game are not changed: 
 The only currently supported version is the version 1.05 of the NISA PC port.
 French and Japanese languages have not been extensively tested.
 
+The mod is intended for speedrunning but not currently allowed on the leaderboards.
+
 Usage
 -----
 
@@ -22,6 +24,13 @@ Usage
 - Click either "Launch Game" or "Launch Game & Exit"
 
 If your game is installed to a nonstandard location and you want to avoid manually choosing the game folder every time, you can copy the mod .exe to that game folder and it should be recognized automatically.
+
+Known issues
+------------
+
+- When auto fast-forward is enabled (L1), the skipped cutscenes will briefly flash instead of the screen staying black.
+  The flashes are likely slow enough to not trigger PSE since there tend to be ~1-2 s between flashes, but at the very least it's a bit annoying.
+  In runs, the only time this is likely to happen is in the chapter 4 end sequence where that one gate scene isn't implemented as a (skippable) cutscene.
 
 Credits
 -------

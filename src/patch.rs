@@ -259,10 +259,22 @@ pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Res
                 replacement: Some(b"ToCS3 1.05 autoskip mod\0"),
             },
             Patch {
-                description: "the part that resets the flag at the end of a skipped scene", // and probably at other times too because it seems we only need to patch this
+                description: "the part that resets the flag at the end of a skipped scene",
                 offset: 0x1403210a1,
                 expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
                 replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
+            },
+            Patch {
+                description: "cutscene skip flag #2",
+                offset: 0x14030acda,
+                expected: &[0x48, 0xc7, 0x83, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // MOV qword ptr [RBX + 0x3d3c],0x00; note that the offset is smaller by one
+                replacement: Some(&[0x48, 0xc7, 0x83, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]), // MOV qword ptr [RBX + 0x3d3c],0x100
+            },
+            Patch {
+                description: "cutscene skip flag #3",
+                offset: 0x1403d5943,
+                expected: &[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RAX + 0x3d3d],0x00
+                replacement: Some(&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RAX + 0x3d3d],0x01
             },
             Patch {
                 description: "skip flag",

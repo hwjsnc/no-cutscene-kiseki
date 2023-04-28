@@ -17,8 +17,8 @@ handle SIGUSR1 pass nostop noprint
 #watch *(unsigned char *) 0x1416c535d
 #condition 1 ((*(unsigned char *) 0x1416c535d) == 0)
 
-#watch *0x14032a5b1 if $rbx != 0x1416c1620
-#watch *0x1403dfda3 if $rax != 0x1416c1620
+#break *0x14032a5b1 if $rbx != 0x1416c1620
+#break *0x1403dfda3 if $rax != 0x1416c1620
 
 ## JP
 
@@ -36,9 +36,9 @@ handle SIGUSR1 pass nostop noprint
 #condition 1 ($rip != 0x1402f5a36) && ($rip != 0x1403210a8) && ($rip != 0x14030ace5) && ($rip != 0x1403d594a)
 
 # watch cutscene skip flag setters
-watch *0x1403210a1 if $rbx != 0x1416ab4f0
-#watch *0x14030acda if $rbx != 0x1416ab4f0
-#watch *0x1403d5943 if $rax != 0x1416ab4f0
+#break *0x1403210a1 if $rbx != 0x1416ab4f0 # tested by doing a full run, never triggered
+break *0x14030acda if $rbx != 0x1416ab4f0
+#break *0x1403d5943 if $rax != 0x1416ab4f0
 
 
 continue
