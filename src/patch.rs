@@ -1,5 +1,7 @@
 use crate::win;
 
+use hex_literal::hex;
+
 use anyhow::Context as _;
 use blake2::Digest as _;
 
@@ -19,8 +21,8 @@ impl ExeVersion {
 
     pub fn expected_blake2b_hash(&self) -> [u8; 64] {
         match self {
-            ExeVersion::NisaV1_05En => hex_literal::hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff"),
-            ExeVersion::NisaV1_05Jp => hex_literal::hex!("2e846b7f10bda3d3ae191d4391b35b879683f73628e9bcb8a93b10448e65ecf22a496e3fe90c06aa140bb75bdfc09965367d4209c6311272e67d9a208104da7d"),
+            ExeVersion::NisaV1_05En => hex!("bbce84df472cdeefd60464715aadfd7e35ca6a9107da320ea137b9424fc3009a4ecf55090f7a439a1ec4969df02bd190e46dd102c1f9bfbfa18d0b8babc989ff"),
+            ExeVersion::NisaV1_05Jp => hex!("2e846b7f10bda3d3ae191d4391b35b879683f73628e9bcb8a93b10448e65ecf22a496e3fe90c06aa140bb75bdfc09965367d4209c6311272e67d9a208104da7d"),
         }
     }
 }
@@ -235,20 +237,20 @@ pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Res
             Patch {
                 description: "the part that sets the flag when starting a new cutscene", // or something like that
                 offset: 0x14032a5b1,
-                expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
-                replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
+                expected: &hex!("c6833d3d000000"),          // MOV byte ptr [RBX + 0x3d3d],0x00
+                replacement: Some(&hex!("c6833d3d000001")), // MOV byte ptr [RBX + 0x3d3d],0x01
             },
             Patch {
                 description: "the part that resets the flag at the end of a skipped scene",
                 offset: 0x1403dfda3,
-                expected: &[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RAX + 0x3d3d],0x00
-                replacement: Some(&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RAX + 0x3d3d],0x01
+                expected: &hex!("c6803d3d000000"),          // MOV byte ptr [RAX + 0x3d3d],0x00
+                replacement: Some(&hex!("c6803d3d000001")), // MOV byte ptr [RAX + 0x3d3d],0x01
             },
             Patch {
                 description: "skip flag",
                 offset: 0x1416c535d,
-                expected: &[0x00],
-                replacement: Some(&[0x01]),
+                expected: &hex!("00"),
+                replacement: Some(&hex!("01")),
             },
         ],
         ExeVersion::NisaV1_05Jp => &[
@@ -261,20 +263,20 @@ pub fn run_and_patch(path: &std::path::Path, version: ExeVersion) -> anyhow::Res
             Patch {
                 description: "the part that resets the flag at the end of a skipped scene",
                 offset: 0x1403210a1,
-                expected: &[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RBX + 0x3d3d],0x00
-                replacement: Some(&[0xc6, 0x83, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RBX + 0x3d3d],0x01
+                expected: &hex!("c6833d3d000000"),          // MOV byte ptr [RBX + 0x3d3d],0x00
+                replacement: Some(&hex!("c6833d3d000001")), // MOV byte ptr [RBX + 0x3d3d],0x01
             },
             Patch {
                 description: "cutscene skip flag #2",
                 offset: 0x14030acda,
-                expected: &[0x48, 0xc7, 0x83, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // MOV qword ptr [RBX + 0x3d3c],0x00; note that the offset is smaller by one
-                replacement: Some(&[0x48, 0xc7, 0x83, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]), // MOV qword ptr [RBX + 0x3d3c],0x100
+                expected: &hex!("48c7833c3d000000000000"),          // MOV qword ptr [RBX + 0x3d3c],0x00; note that the offset is smaller by one
+                replacement: Some(&hex!("48c7833c3d000000010000")), // MOV qword ptr [RBX + 0x3d3c],0x100
             },
             Patch {
                 description: "cutscene skip flag #3",
                 offset: 0x1403d5943,
-                expected: &[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x00],          // MOV byte ptr [RAX + 0x3d3d],0x00
-                replacement: Some(&[0xc6, 0x80, 0x3d, 0x3d, 0x00, 0x00, 0x01]), // MOV byte ptr [RAX + 0x3d3d],0x01
+                expected: &hex!("c6803d3d000000"),          // MOV byte ptr [RAX + 0x3d3d],0x00
+                replacement: Some(&hex!("c6803d3d000001")), // MOV byte ptr [RAX + 0x3d3d],0x01
             },
             Patch {
                 description: "skip flag",
