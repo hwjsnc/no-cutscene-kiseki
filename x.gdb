@@ -17,8 +17,8 @@ handle SIGUSR1 pass nostop noprint
 #watch *(unsigned char *) 0x1416c535d
 #condition 1 ((*(unsigned char *) 0x1416c535d) == 0)
 
-break *0x14032a5b1 if $rbx != 0x1416c1620
-#break *0x1403dfda3 if $rax != 0x1416c1620
+#break *0x14032a5b1 if $rbx != 0x1416c1620 # tested by doing a full run, never triggered
+break *0x1403dfda3 if $rax != 0x1416c1620
 
 ## JP
 
