@@ -30,7 +30,7 @@ Known issues
 
 - When auto fast-forward is enabled (L1), the skipped cutscenes will briefly flash instead of the screen staying black.
   The flashes are likely slow enough to not trigger PSE since there tend to be ~1-2 s between flashes, but at the very least it's a bit annoying.
-  In runs, the only time this is likely to happen is in the chapter 4 end sequence where that one gate scene isn't implemented as a (skippable) cutscene.
+  In runs, this is only likely to happen at the start of chapter 2 and the end of chapter 4 where parts of the cutscene sequences can't be skipped.
 
 Credits
 -------
