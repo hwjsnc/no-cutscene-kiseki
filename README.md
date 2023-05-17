@@ -6,12 +6,14 @@ This is a mod for the PC version of Trails of Cold Steel III to automatically sk
 Every cutscene that can be skipped via the "skip cutscene? yes/no" menu in the original game will be skipped automatically with no user input.
 Cutscenes that cannot be skipped this way in the original game are not changed: They will play out as normal with no input, but can still be fast-forwarded.
 
-[Video demo (on youtube)](https://www.youtube.com/watch?v=2BkCd9lfyQQ)
+[Video demo (on youtube)](https://www.youtube.com/watch?v=NBvfcgbyvhE)
 
 The only currently supported version is the version 1.05 of the NISA PC port.
-French and Japanese languages have not been extensively tested.
+French language has not been extensively tested.
 
 The mod is intended for speedrunning but not currently allowed on the leaderboards.
+
+I don't intend to add support for other games in the series since CS3 is really the only one that benefits a lot from a mod like this.
 
 Usage
 -----
