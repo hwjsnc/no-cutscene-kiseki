@@ -152,6 +152,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
+
+[[package]]
 name = "fltk"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -191,10 +197,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+name = "hexhex"
+version = "1.0.0"
+source = "git+https://git.sr.ht/~quf/hexhex#b8ef1448e96840cfa98558532ec2ca0c442500a7"
+dependencies = [
+ "hexhex_impl",
+ "hexhex_macros",
+]
+
+[[package]]
+name = "hexhex_impl"
+version = "0.1.0"
+source = "git+https://git.sr.ht/~quf/hexhex#b8ef1448e96840cfa98558532ec2ca0c442500a7"
+dependencies = [
+ "fallible-iterator",
+]
+
+[[package]]
+name = "hexhex_macros"
+version = "1.0.0"
+source = "git+https://git.sr.ht/~quf/hexhex#b8ef1448e96840cfa98558532ec2ca0c442500a7"
+dependencies = [
+ "hexhex_impl",
+]
 
 [[package]]
 name = "no-cutscene-kiseki"
@@ -204,7 +229,7 @@ dependencies = [
  "blake2",
  "clap",
  "fltk",
- "hex-literal",
+ "hexhex",
  "windows",
 ]
 
